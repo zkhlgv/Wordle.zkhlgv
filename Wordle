@@ -1,0 +1,77 @@
+import logging
+import random
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
+TOKEN = "7599599450:AAElkStEzDfM9Y8hLutwtnA7zf55Kk2MrL4"
+
+# Загрузка слов из файла
+with open("words.txt", "r", encoding="utf-8") as f:
+    WORDS = [w.strip().lower() for w in f if len(w.strip()) == 5]
+
+user_games = {}
+
+def choose_word():
+    return random.choice(WORDS)
+
+def get_feedback(secret, guess):
+    result = []
+    for i in range(5):
+        if guess[i] == secret[i]:
+            result.append("🟩")  # Буква и место верны
+        elif guess[i] in secret:
+            result.append("🟨")  # Буква есть, но не на месте
+        else:
+            result.append("⬛")  # Неправильная буква
+    return "".join(result)
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    word = choose_word()
+    user_games[user_id] = {"word": word, "attempts": 0, "history": []}
+    print(f"[DEBUG] Пользователь {user_id} - загаданное слово: {word}")  # вывод в консоль
+    await update.message.reply_text("Добро пожаловать в Wordle! Угадайте слово из 5 букв. У вас 6 попыток.")
+
+async def handle_guess(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    guess = update.message.text.lower()
+
+    if user_id not in user_games:
+        await update.message.reply_text("Сначала введите /start, чтобы начать игру.")
+        return
+
+    game = user_games[user_id]
+
+    if len(guess) != 5 or guess not in WORDS:
+        await update.message.reply_text("Введите корректное слово из 5 букв.")
+        return
+
+    game["attempts"] += 1
+    feedback = get_feedback(game["word"], guess)
+    game["history"].append(f"{guess.upper()} -> {feedback}")
+
+    if guess == game["word"]:
+        await update.message.reply_text(f"Поздравляю! Вы угадали слово за {game['attempts']} попыток!")
+        del user_games[user_id]
+    elif game["attempts"] >= 6:
+        await update.message.reply_text(f"Игра окончена. Загаданное слово было: {game['word'].upper()}")
+        del user_games[user_id]
+    else:
+        await update.message.reply_text("\n".join(game["history"]))
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Команды:\n/start - начать игру\n/help - помощь")
+
+def main():
+    logging.basicConfig(level=logging.INFO)
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_guess))
+
+    print("Бот запущен")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
